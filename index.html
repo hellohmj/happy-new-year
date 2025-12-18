@@ -3,90 +3,159 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2026 蛇年大吉 - 粒子烟花盛典</title>
+    <title>2026 蛇年大吉 - 终极3D烟花盛典</title>
     <style>
-        /* --- 基础样式重置 --- */
         html, body {
             margin: 0;
             padding: 0;
             width: 100vw;
             height: 100vh;
             overflow: hidden;
-            background-color: #050505; /* 深邃黑背景 */
-            font-family: "Microsoft YaHei", "Avenir", Helvetica, Arial, sans-serif;
+            background-color: #000; /* 纯黑背景，为了让光栅底座更亮 */
+            font-family: "Microsoft YaHei", sans-serif;
         }
 
-        /* --- 画布层级管理 --- */
-        /* 烟花在底层，作为背景氛围 */
-        #fireworks-canvas {
+        /* 统一管理 Canvas，层层叠加 */
+        .canvas-layer {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1;
         }
 
-        /* 文字粒子在顶层，作为视觉主体 */
-        #text-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10;
-            pointer-events: none; /* 让鼠标事件穿透，不阻挡交互 */
-        }
+        /* 层级 1: 3D 地面 & 原始 3D 烟花 (Base) */
+        #canvas-3d-base { z-index: 1; }
 
-        /* 加载提示 */
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #444;
-            z-index: 0;
-        }
+        /* 层级 2: 高级物理烟花 (Fireworks) */
+        #canvas-fireworks { z-index: 2; mix-blend-mode: screen; }
+
+        /* 层级 3: 粒子文字 (Text) */
+        #canvas-text { z-index: 3; pointer-events: none; }
     </style>
 </head>
 <body>
 
-    <div class="loading">Resource Loading...</div>
-    <canvas id="fireworks-canvas"></canvas>
-    <canvas id="text-canvas"></canvas>
+    <!-- 画布层 -->
+    <canvas id="canvas-3d-base" class="canvas-layer"></canvas>
+    <canvas id="canvas-fireworks" class="canvas-layer"></canvas>
+    <canvas id="canvas-text" class="canvas-layer"></canvas>
 
 <script>
 /**
  * ============================================================================
- * 模块一：高级烟花引擎 (Advanced Fireworks Engine)
- * 负责背景的 3D 粒子烟花渲染
+ * 模块一：3D 光栅化地面引擎 (The "Base" Effect)
+ * 还原第一版代码中的旋转地板效果
  * ============================================================================
  */
 (function() {
-    const canvas = document.getElementById("fireworks-canvas");
+    var canvas = document.getElementById("canvas-3d-base");
+    var ctx = canvas.getContext("2d");
+    var cx, cy, playerZ, playerX, playerY, pitch, yaw, scale, frames;
+    
+    // 初始化变量
+    function initVars() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        cx = canvas.width / 2;
+        cy = canvas.height / 2;
+        playerZ = -25;
+        playerX = playerY = pitch = yaw = 0;
+        scale = 600;
+        frames = 0;
+    }
+
+    // 核心光栅化算法
+    function rasterizePoint(x, y, z) {
+        var p, d;
+        x -= playerX; y -= playerY; z -= playerZ;
+        p = Math.atan2(x, z); d = Math.sqrt(x * x + z * z);
+        x = Math.sin(p - yaw) * d; z = Math.cos(p - yaw) * d;
+        p = Math.atan2(y, z); d = Math.sqrt(y * y + z * z);
+        y = Math.sin(p - pitch) * d; z = Math.cos(p - pitch) * d;
+        
+        var rx1 = -1000, ry1 = 1, rx2 = 1000, ry2 = 1, rx3 = 0, ry3 = 0, rx4 = x, ry4 = z;
+        var uc = (ry4 - ry3) * (rx2 - rx1) - (rx4 - rx3) * (ry2 - ry1);
+        if (!uc) return { x: 0, y: 0, d: -1 };
+        var ua = ((rx4 - rx3) * (ry1 - ry3) - (ry4 - ry3) * (rx1 - rx3)) / uc;
+        var ub = ((rx2 - rx1) * (ry1 - ry3) - (ry2 - ry1) * (rx1 - rx3)) / uc;
+        
+        if (!z) z = 0.000000001;
+        if (ua > 0 && ua < 1 && ub > 0 && ub < 1) {
+            return {
+                x: cx + (rx1 + ua * (rx2 - rx1)) * scale,
+                y: cy + y / z * scale,
+                d: Math.sqrt(x * x + y * y + z * z)
+            };
+        } else {
+            return { d: -1 };
+        }
+    }
+
+    // 绘制逻辑
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 绘制星空背景色
+        ctx.fillStyle = "#ff8"; 
+
+        // 绘制 3D 网格地板
+        for (var i = -100; i < 100; i += 3) {
+            for (var j = -100; j < 100; j += 4) {
+                var x = i; var z = j; var y = 25; // y=25 是地面高度
+                var point = rasterizePoint(x, y, z);
+                if (point.d != -1) {
+                    var size = 250 / (1 + point.d);
+                    var d = Math.sqrt(x * x + z * z);
+                    var a = 0.75 - Math.pow(d / 100, 6) * 0.75; // 距离衰减
+                    if (a > 0) {
+                        ctx.globalAlpha = a;
+                        // 绘制光点
+                        ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
+                    }
+                }
+            }
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    // 每一帧的逻辑
+    function frame() {
+        frames++;
+        // 摄像机旋转逻辑
+        var p = Math.atan2(playerX, playerZ);
+        var d = Math.sqrt(playerX * playerX + playerZ * playerZ);
+        d += Math.sin(frames / 80) / 1.25;
+        var t = Math.sin(frames / 200) / 40;
+        playerX = Math.sin(p + t) * d;
+        playerZ = Math.cos(p + t) * d;
+        yaw = Math.PI + p + t;
+
+        draw();
+        requestAnimationFrame(frame);
+    }
+
+    window.addEventListener("resize", initVars);
+    initVars();
+    frame();
+})();
+
+/**
+ * ============================================================================
+ * 模块二：高级物理烟花引擎 (Fireworks Engine)
+ * 负责空中的爆炸效果
+ * ============================================================================
+ */
+(function() {
+    const canvas = document.getElementById("canvas-fireworks");
     const ctx = canvas.getContext("2d");
     let width, height;
-
-    // 物理参数
-    const gravity = 0.03;
-    const drag = 0.98; // 空气阻力
     
-    // 对象池
+    // 物理变量
     let particles = [];
     let rockets = [];
-    let frames = 0;
+    const gravity = 0.04;
 
-    // 颜色库 (HSL)
-    const colors = [
-        [0, 100, 60],   // Red
-        [30, 100, 60],  // Orange
-        [50, 100, 60],  // Gold
-        [120, 100, 60], // Green
-        [200, 100, 60], // Blue
-        [280, 100, 60]  // Purple
-    ];
-
-    // 初始化画布
     function resize() {
         width = window.innerWidth;
         height = window.innerHeight;
@@ -96,566 +165,269 @@
     window.addEventListener('resize', resize);
     resize();
 
-    // 粒子类
     class Particle {
         constructor(x, y, color) {
-            this.x = x;
-            this.y = y;
-            this.color = color;
-            // 随机爆炸速度
+            this.x = x; this.y = y; this.color = color;
             const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 4 + 1;
+            const speed = Math.random() * 3 + 1;
             this.vx = Math.cos(angle) * speed;
             this.vy = Math.sin(angle) * speed;
             this.alpha = 1;
-            this.decay = Math.random() * 0.015 + 0.005; // 随机消逝速度
-            this.size = Math.random() * 2 + 1;
+            this.decay = Math.random() * 0.01 + 0.005;
         }
-
         update() {
-            this.vx *= drag;
-            this.vy *= drag;
+            this.vx *= 0.95; this.vy *= 0.95; // 空气阻力
             this.vy += gravity;
-            this.x += this.vx;
-            this.y += this.vy;
+            this.x += this.vx; this.y += this.vy;
             this.alpha -= this.decay;
         }
-
         draw(ctx) {
             ctx.save();
             ctx.globalAlpha = this.alpha;
-            ctx.fillStyle = `hsl(${this.color[0]}, ${this.color[1]}%, ${this.color[2]}%)`;
+            ctx.fillStyle = this.color;
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.arc(this.x, this.y, 2, 0, Math.PI*2);
             ctx.fill();
             ctx.restore();
         }
     }
 
-    // 火箭类 (升空阶段)
     class Rocket {
         constructor() {
             this.x = Math.random() * width;
             this.y = height;
-            this.vx = Math.random() * 2 - 1; // 轻微左右偏移
-            this.vy = -(Math.random() * 4 + 10); // 向上速度
-            this.color = colors[Math.floor(Math.random() * colors.length)];
-            this.explodeY = Math.random() * (height * 0.4) + (height * 0.1); // 爆炸高度
+            this.vy = -(Math.random() * 5 + 12); // 上升速度
+            this.vx = (Math.random() - 0.5) * 2;
+            this.color = `hsl(${Math.random()*360}, 100%, 60%)`;
             this.dead = false;
         }
-
         update() {
-            this.x += this.vx;
-            this.y += this.vy;
+            this.x += this.vx; this.y += this.vy;
             this.vy += gravity;
-
-            // 到达高度爆炸
-            if (this.vy >= 0 || this.y <= this.explodeY) {
-                this.explode();
+            if (this.vy >= -1) { // 也就是到了顶点附近
                 this.dead = true;
+                this.explode();
             }
         }
-
-        draw(ctx) {
-            ctx.save();
-            ctx.fillStyle = `hsl(${this.color[0]}, ${this.color[1]}%, 80%)`;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
-            ctx.fill();
-            // 尾迹
-            ctx.fillStyle = `rgba(255, 255, 255, 0.3)`;
-            ctx.fillRect(this.x - 0.5, this.y, 1, 10);
-            ctx.restore();
-        }
-
         explode() {
-            const count = 80 + Math.random() * 50;
-            for (let i = 0; i < count; i++) {
-                particles.push(new Particle(this.x, this.y, this.color));
-            }
+            for(let i=0; i<80; i++) particles.push(new Particle(this.x, this.y, this.color));
+        }
+        draw(ctx) {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 2.5, 0, Math.PI*2);
+            ctx.fill();
         }
     }
 
-    // 主循环
     function loop() {
+        // 使用 clearRect 而不是 fillRect(0,0,w,h) 来保持背景透明，透出底层的 3D 地板
+        ctx.clearRect(0, 0, width, height);
+
+        if (Math.random() < 0.05) rockets.push(new Rocket());
+
+        rockets = rockets.filter(r => {
+            r.update(); r.draw(ctx);
+            return !r.dead;
+        });
+
+        particles = particles.filter(p => {
+            p.update(); p.draw(ctx);
+            return p.alpha > 0;
+        });
+
         requestAnimationFrame(loop);
-        frames++;
-
-        // 拖尾效果
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        ctx.fillRect(0, 0, width, height);
-
-        // 随机发射火箭
-        if (frames % 30 === 0) { // 发射频率
-            rockets.push(new Rocket());
-        }
-
-        // 更新绘制火箭
-        for (let i = rockets.length - 1; i >= 0; i--) {
-            rockets[i].update();
-            rockets[i].draw(ctx);
-            if (rockets[i].dead) {
-                rockets.splice(i, 1);
-            }
-        }
-
-        // 更新绘制粒子
-        for (let i = particles.length - 1; i >= 0; i--) {
-            particles[i].update();
-            particles[i].draw(ctx);
-            if (particles[i].alpha <= 0) {
-                particles.splice(i, 1);
-            }
-        }
     }
-
     loop();
 })();
 
-
 /**
  * ============================================================================
- * 模块二：Shape Shifter 文字粒子引擎 (Text Particle Engine)
- * 负责前景的粒子文字变换
+ * 模块三：Shape Shifter 粒子文字引擎 (Text Engine)
+ * 负责显示 2026 和祝福语
  * ============================================================================
  */
 var S = {
     init: function () {
-        // 初始化绘制层
-        S.Drawing.init('#text-canvas');
-        
-        // 启动文字序列模拟
-        // 格式：#countdown [数字] | [文字1] | [文字2] ...
-        // 核心修改：去除了多余的分隔符，增加了无限循环逻辑
-        // 注意：2026年是马年，这里配置了马年的祝福语
-        S.UI.simulate("#countdown 3|2026|新年快乐|马年大吉|万事如意|龙马精神|HAPPY|NEW YEAR");
-
-        // 启动渲染循环
-        S.Drawing.loop(function () {
-            S.Shape.render();
-        });
+        S.Drawing.init('#canvas-text');
+        // 启动序列：马年祝福无限循环
+        S.UI.simulate("#countdown 3|2026|新年快乐|马年大吉|龙马精神|万事如意");
+        S.Drawing.loop(function () { S.Shape.render(); });
     }
 };
 
-// --- 绘图控制器 ---
 S.Drawing = (function () {
     var canvas, context, renderFn;
-    var requestFrame = window.requestAnimationFrame || 
-                       function(callback) { window.setTimeout(callback, 1000 / 60); };
-
     return {
         init: function (el) {
             canvas = document.querySelector(el);
             context = canvas.getContext('2d');
             this.adjustCanvas();
-            window.addEventListener('resize', function () {
-                S.Drawing.adjustCanvas();
-            });
+            window.addEventListener('resize', () => this.adjustCanvas());
         },
         loop: function (fn) {
-            renderFn = !renderFn ? fn : renderFn;
-            this.clearFrame();
-            renderFn();
-            requestFrame.call(window, this.loop.bind(this));
+            renderFn = fn;
+            (function anim() {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                renderFn();
+                requestAnimationFrame(anim);
+            })();
         },
         adjustCanvas: function () {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         },
-        clearFrame: function () {
-            context.clearRect(0, 0, canvas.width, canvas.height);
-        },
-        getArea: function () {
-            return { w: canvas.width, h: canvas.height };
-        },
-        // 绘制单个粒子
+        getArea: function () { return { w: canvas.width, h: canvas.height }; },
         drawCircle: function (p, c) {
             context.fillStyle = c.render();
             context.beginPath();
-            // 粒子大小随 z 轴变化，产生景深感
-            var radius = Math.max(0.1, p.z); 
-            context.arc(p.x, p.y, radius, 0, 2 * Math.PI, true);
-            context.closePath();
+            // 粒子大小随 z 轴变化，模拟景深
+            context.arc(p.x, p.y, p.z, 0, 2 * Math.PI, true); 
             context.fill();
         }
     };
 })();
 
-// --- UI 序列控制器 ---
 S.UI = (function () {
-    var interval,
-        currentAction,
-        time,
-        maxShapeSize = 30,
-        sequence = [],
-        cmd = '#';
-
-    // 核心修改：更健壮的序列解析
+    var interval, sequence = [], cmd = '#';
+    
     function performAction(value) {
-        // 如果传入的是字符串，进行分割并过滤空项
         if (typeof value === 'string') {
-            sequence = value.split('|').filter(function(item) { return item.trim() !== ''; });
+            sequence = value.split('|').filter(s => s.trim() !== '');
         } else {
             sequence = value;
         }
 
-        // 循环逻辑：如果没有动作了，重新开始 (无限循环)
+        // 无限循环逻辑
         if (sequence.length === 0) {
-            // 重置为默认序列
-            performAction("#countdown 3|2026|新年快乐|马年大吉|万事如意");
+            // 播完一轮，重置序列
+            performAction("2026|新年快乐|马年大吉|龙马精神|万事如意");
             return;
         }
 
-        // 提取下一个动作
-        var current = sequence.shift(); 
-        var action = getAction(current);
-        var val = getValue(current);
-        
-        // 默认延时
-        var delay = 3000; 
+        var current = sequence.shift();
+        var action = current.split(' ')[0];
+        var val = current.split(' ')[1];
+        var delay = 3000;
 
-        if (action === 'countdown') {
+        if (action === cmd + 'countdown') {
             val = parseInt(val) || 3;
-            val = val > 0 ? val : 3;
-            // 倒计时逻辑
-            timedAction(function (index) {
-                if (index === 0) {
-                    performAction(sequence); // 倒计时结束，执行后续
+            var i = val;
+            var tmr = setInterval(() => {
+                if (i === 0) {
+                    clearInterval(tmr);
+                    performAction(sequence);
                 } else {
-                    S.Shape.switchShape(S.ShapeBuilder.letter(index), true); // true 表示快速变换
+                    S.Shape.switchShape(S.ShapeBuilder.letter(i), true);
+                    i--;
                 }
-            }, 1000, val, true); // 每秒跳一次
+            }, 1000);
         } else {
-            // 普通文字显示
             S.Shape.switchShape(S.ShapeBuilder.letter(current));
-            // 等待 delay 毫秒后执行下一个
-            setTimeout(function() {
-                performAction(sequence);
-            }, delay);
+            setTimeout(() => performAction(sequence), delay);
         }
     }
 
-    function getAction(value) {
-        value = value && value.split(' ')[0];
-        return value && value[0] === cmd && value.substring(1);
-    }
-
-    function getValue(value) {
-        return value && value.split(' ')[1];
-    }
-
-    // 倒计时辅助函数
-    function timedAction(fn, delay, max, reverse) {
-        clearInterval(interval);
-        currentAction = reverse ? max : 1;
-        fn(currentAction);
-
-        if (!max || (!reverse && currentAction < max) || (reverse && currentAction > 0)) {
-            interval = setInterval(function () {
-                currentAction = reverse ? currentAction - 1 : currentAction + 1;
-                fn(currentAction);
-                if ((!reverse && max && currentAction === max) || (reverse && currentAction === 0)) {
-                    clearInterval(interval);
-                }
-            }, delay);
-        }
-    }
-
-    return {
-        simulate: function (action) {
-            performAction(action);
-        }
-    };
+    return { simulate: performAction };
 })();
 
-// --- 基础点类 ---
-S.Point = function (args) {
-    this.x = args.x;
-    this.y = args.y;
-    this.z = args.z;
-    this.a = args.a; // alpha 透明度
-    this.h = args.h; // helper 变量
-};
+S.Point = function (args) { this.x = args.x; this.y = args.y; this.z = args.z; this.a = args.a; this.h = args.h; };
+S.Color = function (r, g, b, a) { this.r = r; this.g = g; this.b = b; this.a = a; };
+S.Color.prototype.render = function () { return `rgba(${this.r},${this.g},${this.b},${this.a})`; };
 
-S.Color = function (r, g, b, a) {
-    this.r = r; this.g = g; this.b = b; this.a = a;
-};
-S.Color.prototype.render = function () {
-    return 'rgba(' + this.r + ',' + this.g + ',' + this.b + ',' + this.a + ')';
-};
-
-// --- 粒子实体类 ---
 S.Dot = function (x, y) {
-    this.p = new S.Point({
-        x: x, y: y, z: 5, a: 1, h: 0
-    });
-    this.e = 0.07; // 缓动系数 easing
-    this.s = true; // 状态标记
-
-    this.c = new S.Color(255, 255, 255, this.p.a); // 粒子颜色：白色
-    this.t = this.clone(); // 目标位置 target
-    this.q = []; // 动作队列 queue
+    this.p = new S.Point({ x: x, y: y, z: 5, a: 1, h: 0 });
+    this.e = 0.07; this.s = true;
+    this.c = new S.Color(255, 255, 255, this.p.a);
+    this.t = this.clone(); this.q = [];
 };
 
 S.Dot.prototype = {
-    clone: function () {
-        return new S.Point({
-            x: this.x, y: this.y, z: this.z, a: this.a, h: this.h
-        });
-    },
-    _draw: function () {
-        this.c.a = this.p.a;
-        S.Drawing.drawCircle(this.p, this.c);
-    },
+    clone: function () { return new S.Point({ x: this.x, y: this.y, z: this.z, a: this.a, h: this.h }); },
+    _draw: function () { this.c.a = this.p.a; S.Drawing.drawCircle(this.p, this.c); },
     _moveTowards: function (n) {
-        var details = this.distanceTo(n, true),
-            dx = details[0],
-            dy = details[1],
-            d = details[2],
-            e = this.e * d;
-
-        if (this.p.h === -1) {
-            this.p.x = n.x; this.p.y = n.y;
-            return true;
-        }
-        if (d > 1) {
-            this.p.x -= ((dx / d) * e);
-            this.p.y -= ((dy / d) * e);
-        } else {
-            if (this.p.h > 0) {
-                this.p.h--;
-            } else {
-                return true;
-            }
-        }
+        var dx = this.p.x - n.x, dy = this.p.y - n.y, d = Math.sqrt(dx*dx + dy*dy), e = this.e * d;
+        if (this.p.h === -1) { this.p.x = n.x; this.p.y = n.y; return true; }
+        if (d > 1) { this.p.x -= (dx/d)*e; this.p.y -= (dy/d)*e; }
+        else { if (this.p.h > 0) this.p.h--; else return true; }
         return false;
     },
     _update: function () {
         if (this._moveTowards(this.t)) {
             var p = this.q.shift();
-            if (p) {
-                this.t.x = p.x || this.p.x;
-                this.t.y = p.y || this.p.y;
-                this.t.z = p.z || this.p.z;
-                this.t.a = p.a || this.p.a;
-                this.p.h = p.h || 0;
-            } else {
-                // 闲置状态下的微小抖动，增加活力
-                if (this.s) {
-                    this.p.x -= Math.sin(Math.random() * 3.142);
-                    this.p.y -= Math.sin(Math.random() * 3.142);
-                } else {
-                    this.move(new S.Point({
-                        x: this.p.x + (Math.random() * 50) - 25,
-                        y: this.p.y + (Math.random() * 50) - 25,
-                    }));
-                }
+            if (p) { this.t.x = p.x || this.p.x; this.t.y = p.y || this.p.y; this.t.z = p.z || this.p.z; this.t.a = p.a || this.p.a; this.p.h = p.h || 0; }
+            else {
+                if (this.s) { this.p.x -= Math.sin(Math.random()*3.14); this.p.y -= Math.sin(Math.random()*3.14); }
+                else { this.move(new S.Point({ x: this.p.x + (Math.random()*50)-25, y: this.p.y + (Math.random()*50)-25 })); }
             }
         }
-        // 透明度和 Z 轴缓动
-        d = this.p.a - this.t.a;
-        this.p.a = Math.max(0.1, this.p.a - (d * 0.05));
-        d = this.p.z - this.t.z;
-        this.p.z = Math.max(1, this.p.z - (d * 0.05));
+        this.p.a = Math.max(0.1, this.p.a - (this.p.a - this.t.a) * 0.05);
+        this.p.z = Math.max(1, this.p.z - (this.p.z - this.t.z) * 0.05);
     },
-    distanceTo: function (n, details) {
-        var dx = this.p.x - n.x,
-            dy = this.p.y - n.y,
-            d = Math.sqrt(dx * dx + dy * dy);
-        return details ? [dx, dy, d] : d;
-    },
-    move: function (p, avoidStatic) {
-        if (!avoidStatic || (avoidStatic && this.distanceTo(p) > 1)) {
-            this.q.push(p);
-        }
-    },
-    render: function () {
-        this._update();
-        this._draw();
-    }
+    move: function (p) { this.q.push(p); },
+    render: function () { this._update(); this._draw(); }
 };
 
-// --- 形状构建器 (核心修复：字体适配) ---
 S.ShapeBuilder = (function () {
-    var gap = 11, // 粒子间距，越小粒子越密
-        shapeCanvas = document.createElement('canvas'),
-        shapeContext = shapeCanvas.getContext('2d'),
-        fontFamily = 'Microsoft YaHei, Helvetica, Arial, sans-serif';
-
-    function fit() {
-        shapeCanvas.width = Math.floor(window.innerWidth / gap) * gap;
-        shapeCanvas.height = Math.floor(window.innerHeight / gap) * gap;
-        shapeContext.fillStyle = 'red';
-        shapeContext.textBaseline = 'middle';
-        shapeContext.textAlign = 'center';
-    }
-
-    function processCanvas() {
-        var pixels = shapeContext.getImageData(0, 0, shapeCanvas.width, shapeCanvas.height).data,
-            dots = [],
-            x = 0, y = 0,
-            fx = shapeCanvas.width, fy = shapeCanvas.height,
-            w = 0, h = 0;
-
-        for (var p = 0; p < pixels.length; p += (4 * gap)) {
-            if (pixels[p + 3] > 0) {
-                dots.push(new S.Point({ x: x, y: y }));
-                w = x > w ? x : w;
-                h = y > h ? y : h;
-                fx = x < fx ? x : fx;
-                fy = y < fy ? y : fy;
-            }
-            x += gap;
-            if (x >= shapeCanvas.width) {
-                x = 0; y += gap; p += gap * 4 * shapeCanvas.width;
-            }
+    var gap = 11, shapeCanvas = document.createElement('canvas'), shapeContext = shapeCanvas.getContext('2d');
+    function fit() { shapeCanvas.width = Math.floor(window.innerWidth / gap) * gap; shapeCanvas.height = Math.floor(window.innerHeight / gap) * gap; }
+    function process() {
+        var pixels = shapeContext.getImageData(0, 0, shapeCanvas.width, shapeCanvas.height).data, dots = [];
+        for (var p = 0, x = 0, y = 0; p < pixels.length; p += (4 * gap)) {
+            if (pixels[p + 3] > 0) dots.push(new S.Point({ x: x, y: y }));
+            x += gap; if (x >= shapeCanvas.width) { x = 0; y += gap; p += gap * 4 * shapeCanvas.width; }
         }
-        return { dots: dots, w: w + fx, h: h + fy };
+        return { dots: dots, w: shapeCanvas.width, h: shapeCanvas.height };
     }
-
-    function setFontSize(s) {
-        shapeContext.font = 'bold ' + s + 'px ' + fontFamily;
-    }
-
-    function init() {
-        fit();
-        window.addEventListener('resize', fit);
-    }
-    init();
-
     return {
-        // 构建文字形状
+        init: function() { fit(); window.addEventListener('resize', fit); },
         letter: function (l) {
-            var s = 0;
-            // 基础字体大小
-            var baseFontSize = 600; 
-            
-            // 1. 设置初始字体计算宽度
-            setFontSize(baseFontSize);
+            // 自动字体大小计算
+            var fontSize = 600;
+            shapeContext.font = "bold " + fontSize + "px Arial";
             var textWidth = shapeContext.measureText(l).width;
+            var targetWidth = shapeCanvas.width * 0.8;
+            fontSize = Math.min(fontSize, fontSize * (targetWidth / textWidth));
             
-            // 2. 动态调整字体大小以适应屏幕
-            // 目标宽度占屏幕宽度的 80%，目标高度占屏幕高度的 50%
-            var targetWidth = shapeCanvas.width * 0.8; 
-            var ratio = targetWidth / textWidth;
-            
-            s = Math.min(baseFontSize, baseFontSize * ratio, shapeCanvas.height * 0.5);
-
-            setFontSize(s);
+            shapeContext.font = "bold " + fontSize + "px Arial";
+            shapeContext.fillStyle = "red"; shapeContext.textBaseline = "middle"; shapeContext.textAlign = "center";
             shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
             shapeContext.fillText(l, shapeCanvas.width / 2, shapeCanvas.height / 2);
-
-            return processCanvas();
-        },
-        circle: function (d) {
-            var r = Math.max(0, d) / 2;
-            shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
-            shapeContext.beginPath();
-            shapeContext.arc(r * gap, r * gap, r * gap, 0, 2 * Math.PI, false);
-            shapeContext.fill();
-            shapeContext.closePath();
-            return processCanvas();
+            return process();
         }
     };
 })();
+S.ShapeBuilder.init();
 
-// --- 形状管理器 ---
 S.Shape = (function () {
-    var dots = [],
-        width = 0, height = 0,
-        cx = 0, cy = 0;
-
-    function compensate() {
-        var a = S.Drawing.getArea();
-        cx = a.w / 2 - width / 2;
-        cy = a.h / 2 - height / 2;
-    }
-
+    var dots = [], width = 0, height = 0, cx = 0, cy = 0;
     return {
-        // 切换到新形状
         switchShape: function (n, fast) {
-            var size,
-                a = S.Drawing.getArea();
-
-            width = n.w;
-            height = n.h;
-            compensate();
-
-            // 如果新形状需要的点更多，补充点
+            width = n.w; height = n.h;
+            cx = S.Drawing.getArea().w / 2 - width / 2; cy = S.Drawing.getArea().h / 2 - height / 2;
             if (n.dots.length > dots.length) {
-                size = n.dots.length - dots.length;
-                for (var d = 1; d <= size; d++) {
-                    dots.push(new S.Dot(a.w / 2, a.h / 2));
-                }
+                for (var i = dots.length; i < n.dots.length; i++) dots.push(new S.Dot(width/2, height/2));
             }
-
-            var d = 0, i = 0;
-
-            // 重新分配点的位置
+            var d = 0;
             while (n.dots.length > 0) {
-                i = Math.floor(Math.random() * n.dots.length);
-                dots[d].e = fast ? 0.25 : (dots[d].s ? 0.14 : 0.11);
-
-                if (dots[d].s) {
-                    // 从随机位置飞入
-                    dots[d].move(new S.Point({
-                        z: Math.random() * 20 + 10,
-                        a: Math.random(),
-                        h: 18
-                    }));
-                } else {
-                    dots[d].move(new S.Point({
-                        z: Math.random() * 5 + 5,
-                        h: fast ? 18 : 30
-                    }));
-                }
-
+                var i = Math.floor(Math.random() * n.dots.length);
+                dots[d].e = fast ? 0.25 : 0.14;
                 dots[d].s = true;
-                // 移动到目标文字位置
-                dots[d].move(new S.Point({
-                    x: n.dots[i].x + cx,
-                    y: n.dots[i].y + cy,
-                    a: 1,
-                    z: 5,
-                    h: 0
-                }));
-
-                n.dots = n.dots.slice(0, i).concat(n.dots.slice(i + 1));
-                d++;
+                dots[d].move(new S.Point({ x: n.dots[i].x + cx, y: n.dots[i].y + cy, a: 1, z: 5, h: 0 }));
+                n.dots.splice(i, 1); d++;
             }
-
-            // 多余的点飞出屏幕
             for (var i = d; i < dots.length; i++) {
                 if (dots[i].s) {
-                    dots[i].move(new S.Point({
-                        z: Math.random() * 20 + 10,
-                        a: Math.random(),
-                        h: 20
-                    }));
-
                     dots[i].s = false;
-                    dots[i].e = 0.04;
-                    dots[i].move(new S.Point({
-                        x: Math.random() * a.w,
-                        y: Math.random() * a.h,
-                        a: 0.3, 
-                        z: Math.random() * 4,
-                        h: 0
-                    }));
+                    dots[i].move(new S.Point({ x: Math.random() * width + cx, y: Math.random() * height + cy, a: 0.1, z: 2, h: 0 }));
                 }
             }
         },
-        render: function () {
-            for (var d = 0; d < dots.length; d++) {
-                dots[d].render();
-            }
-        }
+        render: function () { for (var d = 0; d < dots.length; d++) dots[d].render(); }
     };
 })();
 
-// 初始化全流程
 S.init();
-
 </script>
 </body>
 </html>
