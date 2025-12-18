@@ -1,11 +1,17 @@
+
 /*
+
   Shape Shifter
   =============
   A canvas experiment by Kenneth Cachia
   http://www.kennethcachia.com
 
-  Updated for 2026 New Year Animation
+  Updated code
+  ------------
+  https://github.com/kennethcachia/Shape-Shifter
+
 */
+
 
 var S = {
   init: function () {
@@ -15,26 +21,25 @@ var S = {
     S.Drawing.init('.canvas');
     document.body.classList.add('body--ready');
 
-    // 核心修改：确保初始化时正确调用模拟序列
     if (i !== -1) {
       S.UI.simulate(decodeURI(action).substring(i + 3));
     } else {
-      // 修改此处序列：倒计时 -> 2026 -> 新年快乐 -> 祝福语
-      // 注意：去掉末尾的 | 符号，防止动画重置为空白
-      S.UI.simulate('#countdown 3|2026|新年快乐|马年大吉|万事如意');
+      // 倒计时修改这句中的数字，不需要倒计时删除“|#countdown 3|”，换内容修改文字
+      S.UI.simulate('|#countdown 3||2024|新|年|快|乐|#rectangle|');
     }
 
     S.Drawing.loop(function () {
       S.Shape.render();
     });
   }
+  
 };
 
 
 S.Drawing = (function () {
   var canvas,
       context,
-      renderFn,
+      renderFn
       requestFrame = window.requestAnimationFrame       ||
                      window.webkitRequestAnimationFrame ||
                      window.mozRequestAnimationFrame    ||
@@ -87,16 +92,20 @@ S.Drawing = (function () {
 
 
 S.UI = (function () {
-  var interval,
+  var canvas = document.querySelector('.canvas'),
+      interval,
+      isTouch = false, //('ontouchstart' in window || navigator.msMaxTouchPoints),
       currentAction,
+      resizeTimer,
       time,
       maxShapeSize = 30,
+      firstAction = true,
       sequence = [],
       cmd = '#';
 
   function formatTime(date) {
     var h = date.getHours(),
-        m = date.getMinutes();
+        m = date.getMinutes(),
     m = m < 10 ? '0' + m : m;
     return h + ':' + m;
   }
@@ -127,19 +136,25 @@ S.UI = (function () {
     }
   }
 
+  function reset(destroy) {
+    clearInterval(interval);
+    sequence = [];
+    time = null;
+    destroy && S.Shape.switchShape(S.ShapeBuilder.letter(''));
+  }
+
   function performAction(value) {
     var action,
+        value,
         current;
 
-    // 修复：处理序列逻辑，确保它是数组或字符串分割
+    // overlay.classList.remove('overlay--visible');
     sequence = typeof(value) === 'object' ? value : sequence.concat(value.split('|'));
+    // input.value = '';
+    // checkInputWidth();
 
     timedAction(function (index) {
       current = sequence.shift();
-      
-      // 修复：如果序列为空，停止执行，避免 undefined 错误
-      if (!current) return;
-
       action = getAction(current);
       value = getValue(current);
 
@@ -151,9 +166,7 @@ S.UI = (function () {
           timedAction(function (index) {
             if (index === 0) {
               if (sequence.length === 0) {
-                // 倒计时结束且无后续，显示空白或重置
-                // 这里我们改为不动作，保持最后一个数字，或者继续下一个序列
-                performAction(sequence);
+                S.Shape.switchShape(S.ShapeBuilder.letter(''));
               } else {
                 performAction(sequence);
               }
@@ -166,6 +179,7 @@ S.UI = (function () {
         case 'rectangle':
           value = value && value.split('x');
           value = (value && value.length === 2) ? value : [maxShapeSize, maxShapeSize / 2];
+
           S.Shape.switchShape(S.ShapeBuilder.rectangle(Math.min(maxShapeSize, parseInt(value[0])), Math.min(maxShapeSize, parseInt(value[1]))));
           break;
 
@@ -177,6 +191,7 @@ S.UI = (function () {
 
         case 'time':
           var t = formatTime(new Date());
+
           if (sequence.length > 0) {
             S.Shape.switchShape(S.ShapeBuilder.letter(t));
           } else {
@@ -191,17 +206,144 @@ S.UI = (function () {
           break;
 
         default:
-          // 默认显示文字
           S.Shape.switchShape(S.ShapeBuilder.letter(current[0] === cmd ? 'What?' : current));
       }
-    }, 2500, sequence.length); // 这里调整了每个词的停留时间为 2500ms
+    }, 2000, sequence.length);
   }
+
+  function checkInputWidth(e) {
+    if (input.value.length > 18) {
+      ui.classList.add('ui--wide');
+    } else {
+      ui.classList.remove('ui--wide');
+    }
+
+    if (firstAction && input.value.length > 0) {
+      ui.classList.add('ui--enter');
+    } else {
+      ui.classList.remove('ui--enter');
+    }
+  }
+
+  function bindEvents() {
+    document.body.addEventListener('keydown', function (e) {
+      input.focus();
+
+      if (e.keyCode === 13) {
+        firstAction = false;
+        reset();
+        performAction(input.value);
+      }
+    });
+
+    // input.addEventListener('input', checkInputWidth);
+    // input.addEventListener('change', checkInputWidth);
+    // input.addEventListener('focus', checkInputWidth);
+
+    // help.addEventListener('click', function (e) {
+    //   overlay.classList.toggle('overlay--visible');
+    //   overlay.classList.contains('overlay--visible') && reset(true);
+    // });
+
+    // commands.addEventListener('click', function (e) {
+    //   var el,
+    //       info,
+    //       demo,
+    //       tab,
+    //       active,
+    //       url;
+    //
+    //   if (e.target.classList.contains('commands-item')) {
+    //     el = e.target;
+    //   } else {
+    //     el = e.target.parentNode.classList.contains('commands-item') ? e.target.parentNode : e.target.parentNode.parentNode;
+    //   }
+    //
+    //   info = el && el.querySelector('.commands-item-info');
+    //   demo = el && info.getAttribute('data-demo');
+    //   url = el && info.getAttribute('data-url');
+    //
+    //   if (info) {
+    //     overlay.classList.remove('overlay--visible');
+    //
+    //     if (demo) {
+    //       input.value = demo;
+    //
+    //       if (isTouch) {
+    //         reset();
+    //         performAction(input.value);
+    //       } else {
+    //         input.focus();
+    //       }
+    //     } else if (url) {
+    //       //window.location = url;
+    //     }
+    //   }
+    // });
+
+    canvas.addEventListener('click', function (e) {
+      overlay.classList.remove('overlay--visible');
+    });
+  }
+
+  function init() {
+    bindEvents();
+    // input.focus();
+    isTouch && document.body.classList.add('touch');
+  }
+
+  // Init
+  init();
 
   return {
     simulate: function (action) {
       performAction(action);
     }
   }
+}());
+
+
+S.UI.Tabs = (function () {
+  var tabs = document.querySelector('.tabs'),
+      labels = document.querySelector('.tabs-labels'),
+      triggers = document.querySelectorAll('.tabs-label'),
+      panels = document.querySelectorAll('.tabs-panel');
+
+  function activate(i) {
+    triggers[i].classList.add('tabs-label--active');
+    panels[i].classList.add('tabs-panel--active');
+  }
+
+  function bindEvents() {
+    labels.addEventListener('click', function (e) {
+      var el = e.target,
+          index;
+
+      if (el.classList.contains('tabs-label')) {
+        for (var t = 0; t < triggers.length; t++) {
+          triggers[t].classList.remove('tabs-label--active');
+          panels[t].classList.remove('tabs-panel--active');
+
+          if (el === triggers[t]) {
+            index = t;
+          }
+        }
+
+        activate(index);
+      }
+      var a = document.getElementById("dd");
+      a.onload();
+      a.onplay();
+    });
+  }
+
+  function init() {
+    activate(0);
+    bindEvents();
+  }
+
+  // Init
+  init();
 }());
 
 
@@ -407,6 +549,23 @@ S.ShapeBuilder = (function () {
   init();
 
   return {
+    imageFile: function (url, callback) {
+      var image = new Image(),
+          a = S.Drawing.getArea();
+
+      image.onload = function () {
+        shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
+        shapeContext.drawImage(this, 0, 0, a.h * 0.6, a.h * 0.6);
+        callback(processCanvas());
+      };
+
+      image.onerror = function () {
+        callback(S.ShapeBuilder.letter('What?'));
+      }
+
+      image.src = url;
+    },
+
     circle: function (d) {
       var r = Math.max(0, d) / 2;
       shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
@@ -559,5 +718,5 @@ S.Shape = (function () {
   }
 }());
 
-// 启动程序
+
 S.init();
