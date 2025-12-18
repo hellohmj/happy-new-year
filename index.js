@@ -718,5 +718,5 @@ S.Shape = (function () {
   }
 }());
 
-
+S.UI.simulate('|#countdown 3|2026|新|年 |快|乐|');
 S.init();
