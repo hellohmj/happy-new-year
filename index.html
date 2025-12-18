@@ -34,33 +34,6 @@
             z-index: 500;
         }
 
-        #musicControl {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 2000;
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
-            transition: all 0.3s;
-        }
-
-        #musicControl:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: scale(1.1);
-        }
-
-        #musicControl span {
-            font-size: 30px;
-        }
-
         #blessing {
             display: none;
             position: fixed;
@@ -163,31 +136,10 @@
                 font-size: 14px;
                 letter-spacing: 1px;
             }
-            #musicControl {
-                width: 50px;
-                height: 50px;
-                top: 10px;
-                right: 10px;
-            }
-            #musicControl span {
-                font-size: 24px;
-            }
         }
     </style>
 </head>
 <body>
-    <!-- 音乐控制按钮 -->
-    <div id="musicControl" onclick="toggleMusic()">
-        <span id="musicIcon">🔊</span>
-    </div>
-
-    <!-- 背景音乐 -->
-    <audio id="bgMusic" loop>
-        <source src="https://www.bensound.com/bensound-music/bensound-happyrock.mp3" type="audio/mpeg">
-        <!-- 备用音乐源 -->
-        <source src="https://files.freemusicarchive.org/storage-freemusicarchive-org/music/Music_for_Video/Kevin_MacLeod/Happy/Kevin_MacLeod_-_01_-_Jingle_Bells.mp3" type="audio/mpeg">
-    </audio>
-
     <!-- 字符雨背景 -->
     <canvas id="bgCanvas"></canvas>
     
@@ -211,47 +163,6 @@
     <canvas id="emojiCanvas"></canvas>
 
     <script>
-        // ========== 音乐控制 ==========
-        let bgMusic = document.getElementById('bgMusic');
-        let musicIcon = document.getElementById('musicIcon');
-        let isMusicPlaying = false;
-
-        function toggleMusic() {
-            if (isMusicPlaying) {
-                bgMusic.pause();
-                musicIcon.textContent = '🔇';
-                isMusicPlaying = false;
-            } else {
-                bgMusic.play().catch(e => {
-                    console.log('音乐播放失败，可能需要用户交互:', e);
-                });
-                musicIcon.textContent = '🔊';
-                isMusicPlaying = true;
-            }
-        }
-
-        // 页面加载后尝试自动播放音乐
-        window.addEventListener('load', () => {
-            bgMusic.play().then(() => {
-                isMusicPlaying = true;
-                musicIcon.textContent = '🔊';
-            }).catch(e => {
-                console.log('自动播放被阻止，请用户点击播放');
-                musicIcon.textContent = '🔇';
-            });
-        });
-
-        // 用户首次点击页面时尝试播放音乐
-        document.addEventListener('click', function playOnFirstClick() {
-            if (!isMusicPlaying) {
-                bgMusic.play().then(() => {
-                    isMusicPlaying = true;
-                    musicIcon.textContent = '🔊';
-                }).catch(e => {});
-            }
-            document.removeEventListener('click', playOnFirstClick);
-        }, { once: true });
-
         // ========== 字符雨背景 ==========
         var bgCanvas = document.getElementById('bgCanvas');
         var bgCtx = bgCanvas.getContext('2d');
@@ -304,7 +215,7 @@
                 this.vx = (this.baseX - this.x) * 0.05;
                 this.vy = (this.baseY - this.y) * 0.05;
                 this.life = 1;
-                this.size = Math.random() * 4 + 3; // 增大粒子尺寸
+                this.size = Math.random() * 4 + 3;
                 // 随机选择蓝色或白色
                 this.isBlue = Math.random() > 0.5;
                 this.blueShade = Math.random() * 100 + 150;
