@@ -1,441 +1,660 @@
 <!doctype html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<title>2026 马年大吉 - 盛世烟花</title>
-<style>
-    /* 基础重置 */
-    html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background-color: #050505; /* 深夜黑 */
-        font-family: "Microsoft YaHei", "Heiti SC", sans-serif;
-    }
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 蛇年大吉 - 粒子烟花盛典</title>
+    <style>
+        /* --- 基础样式重置 --- */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #050505; /* 深邃黑背景 */
+            font-family: "Microsoft YaHei", "Avenir", Helvetica, Arial, sans-serif;
+        }
 
-    /* 画布样式 */
-    canvas {
-        display: block;
-        position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 1;
-    }
+        /* --- 画布层级管理 --- */
+        /* 烟花在底层，作为背景氛围 */
+        #fireworks-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
 
-    /* 遮罩层，用于提升文字清晰度 */
-    #overlay {
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        background: radial-gradient(circle, transparent 20%, #000 90%);
-        z-index: 2;
-        pointer-events: none;
-    }
-</style>
+        /* 文字粒子在顶层，作为视觉主体 */
+        #text-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* 让鼠标事件穿透，不阻挡交互 */
+        }
+
+        /* 加载提示 */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #444;
+            z-index: 0;
+        }
+    </style>
 </head>
 <body>
 
-<div id="overlay"></div>
-<canvas id="mainCanvas"></canvas>
+    <div class="loading">Resource Loading...</div>
+    <canvas id="fireworks-canvas"></canvas>
+    <canvas id="text-canvas"></canvas>
 
 <script>
 /**
- * ============================================================
- *  2026 马年专属粒子引擎 (Horse Year Particle Engine)
- *  包含：向量数学库、物理系统、文本栅格化系统、烟花系统
- * ============================================================
+ * ============================================================================
+ * 模块一：高级烟花引擎 (Advanced Fireworks Engine)
+ * 负责背景的 3D 粒子烟花渲染
+ * ============================================================================
  */
+(function() {
+    const canvas = document.getElementById("fireworks-canvas");
+    const ctx = canvas.getContext("2d");
+    let width, height;
 
-// --- 配置参数 (Configuration) ---
-const CONFIG = {
-    particleCount: 1500,        // 文字粒子数量
-    fireworkChance: 0.08,       // 烟花发射频率
-    gravity: 0.05,              // 环境重力
-    friction: 0.96,             // 粒子摩擦力
-    textColors: ['#FFD700', '#FFA500', '#FF4500', '#FFFFFF'], // 金、橙、红、白
-    bgAlpha: 0.2,               // 拖尾效果强度 (越小拖尾越长)
-    font: 'bold 200px "Microsoft YaHei", sans-serif'
-};
+    // 物理参数
+    const gravity = 0.03;
+    const drag = 0.98; // 空气阻力
+    
+    // 对象池
+    let particles = [];
+    let rockets = [];
+    let frames = 0;
 
-// --- 数学工具库 (Vector Math Library) ---
-class Vector2 {
-    constructor(x, y) {
-        this.x = x || 0;
-        this.y = y || 0;
+    // 颜色库 (HSL)
+    const colors = [
+        [0, 100, 60],   // Red
+        [30, 100, 60],  // Orange
+        [50, 100, 60],  // Gold
+        [120, 100, 60], // Green
+        [200, 100, 60], // Blue
+        [280, 100, 60]  // Purple
+    ];
+
+    // 初始化画布
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
     }
-    add(v) { this.x += v.x; this.y += v.y; return this; }
-    sub(v) { this.x -= v.x; this.y -= v.y; return this; }
-    mult(n) { this.x *= n; this.y *= n; return this; }
-    div(n) { this.x /= n; this.y /= n; return this; }
-    mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
-    normalize() {
-        let m = this.mag();
-        if (m !== 0) this.div(m);
-        return this;
-    }
-    limit(max) {
-        if (this.mag() > max) {
-            this.normalize();
-            this.mult(max);
+    window.addEventListener('resize', resize);
+    resize();
+
+    // 粒子类
+    class Particle {
+        constructor(x, y, color) {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            // 随机爆炸速度
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 4 + 1;
+            this.vx = Math.cos(angle) * speed;
+            this.vy = Math.sin(angle) * speed;
+            this.alpha = 1;
+            this.decay = Math.random() * 0.015 + 0.005; // 随机消逝速度
+            this.size = Math.random() * 2 + 1;
         }
-        return this;
-    }
-    static random2D() {
-        let angle = Math.random() * Math.PI * 2;
-        return new Vector2(Math.cos(angle), Math.sin(angle));
-    }
-    clone() { return new Vector2(this.x, this.y); }
-}
 
-// --- 基础粒子类 (Base Particle) ---
-class Particle {
-    constructor(x, y) {
-        this.pos = new Vector2(x, y);
-        this.vel = new Vector2(0, 0);
-        this.acc = new Vector2(0, 0);
-        this.alpha = 1;
-        this.color = '#fff';
-        this.size = 2;
-        this.dead = false;
-    }
+        update() {
+            this.vx *= drag;
+            this.vy *= drag;
+            this.vy += gravity;
+            this.x += this.vx;
+            this.y += this.vy;
+            this.alpha -= this.decay;
+        }
 
-    applyForce(force) {
-        this.acc.add(force);
-    }
-
-    update() {
-        this.vel.add(this.acc);
-        this.pos.add(this.vel);
-        this.acc.mult(0); // 重置加速度
-    }
-
-    draw(ctx) {
-        // 子类实现
-    }
-}
-
-// --- 烟花粒子 (Firework Particle) ---
-class FireworkParticle extends Particle {
-    constructor(x, y, hue, isSpark) {
-        super(x, y);
-        this.hue = hue;
-        this.isSpark = isSpark; // 是否是爆炸后的火花
-        this.lifespan = 255;
-        this.decay = isSpark ? Math.random() * 2 + 1 : 2; 
-        
-        if (this.isSpark) {
-            // 爆炸散开
-            this.vel = Vector2.random2D();
-            this.vel.mult(Math.random() * 6 + 1);
-            this.friction = 0.95;
-            this.gravity = new Vector2(0, 0.1);
-        } else {
-            // 上升火箭
-            this.vel = new Vector2(0, -(Math.random() * 6 + 10)); // 随机上升速度
-            this.friction = 1;
-            this.gravity = new Vector2(0, 0.15);
+        draw(ctx) {
+            ctx.save();
+            ctx.globalAlpha = this.alpha;
+            ctx.fillStyle = `hsl(${this.color[0]}, ${this.color[1]}%, ${this.color[2]}%)`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         }
     }
 
-    update() {
-        this.applyForce(this.gravity);
-        this.vel.mult(this.friction);
-        super.update();
+    // 火箭类 (升空阶段)
+    class Rocket {
+        constructor() {
+            this.x = Math.random() * width;
+            this.y = height;
+            this.vx = Math.random() * 2 - 1; // 轻微左右偏移
+            this.vy = -(Math.random() * 4 + 10); // 向上速度
+            this.color = colors[Math.floor(Math.random() * colors.length)];
+            this.explodeY = Math.random() * (height * 0.4) + (height * 0.1); // 爆炸高度
+            this.dead = false;
+        }
 
-        if (this.isSpark) {
-            this.lifespan -= this.decay;
-            this.alpha = this.lifespan / 255;
-            if (this.lifespan <= 0) this.dead = true;
-        } else {
-            // 火箭上升到了顶点（速度变慢）或者随机时间到达
-            if (this.vel.y >= -1) {
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vy += gravity;
+
+            // 到达高度爆炸
+            if (this.vy >= 0 || this.y <= this.explodeY) {
+                this.explode();
                 this.dead = true;
             }
         }
-    }
 
-    draw(ctx) {
-        ctx.save();
-        ctx.globalAlpha = this.alpha;
-        ctx.fillStyle = `hsl(${this.hue}, 100%, 60%)`;
-        ctx.beginPath();
-        ctx.arc(this.pos.x, this.pos.y, this.isSpark ? 1.5 : 2.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-}
-
-// --- 文字粒子 (Text Particle) ---
-// 这些粒子会组成文字形状
-class TextParticle extends Particle {
-    constructor(x, y) {
-        super(Math.random() * window.innerWidth, Math.random() * window.innerHeight); // 随机出生
-        this.target = new Vector2(x, y); // 目标位置
-        this.baseSize = Math.random() * 2 + 2;
-        this.size = this.baseSize;
-        this.color = CONFIG.textColors[Math.floor(Math.random() * CONFIG.textColors.length)];
-        this.maxSpeed = 15;
-        this.maxForce = 1;
-    }
-
-    // 核心行为：寻找目标点 (Arrive Behavior)
-    behaviors() {
-        let arrive = this.arrive(this.target);
-        this.applyForce(arrive);
-    }
-
-    arrive(target) {
-        let desired = new Vector2(target.x - this.pos.x, target.y - this.pos.y);
-        let d = desired.mag();
-        let speed = this.maxSpeed;
-        if (d < 100) {
-            speed = (d / 100) * this.maxSpeed; // 接近时减速
+        draw(ctx) {
+            ctx.save();
+            ctx.fillStyle = `hsl(${this.color[0]}, ${this.color[1]}%, 80%)`;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+            ctx.fill();
+            // 尾迹
+            ctx.fillStyle = `rgba(255, 255, 255, 0.3)`;
+            ctx.fillRect(this.x - 0.5, this.y, 1, 10);
+            ctx.restore();
         }
-        desired.normalize();
-        desired.mult(speed);
-        let steer = new Vector2(desired.x - this.vel.x, desired.y - this.vel.y);
-        steer.limit(this.maxForce);
-        return steer;
-    }
 
-    update() {
-        this.behaviors();
-        super.update();
-        // 简单的闪烁效果
-        this.size = this.baseSize + Math.sin(Date.now() * 0.01 + this.pos.x) * 1;
-    }
-
-    draw(ctx) {
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    setTarget(x, y) {
-        this.target = new Vector2(x, y);
-    }
-}
-
-// --- 烟花系统控制器 (Firework System) ---
-class FireworkSystem {
-    constructor() {
-        this.fireworks = []; // 火箭
-        this.particles = []; // 爆炸碎片
-    }
-
-    addFirework() {
-        // 在屏幕底部随机位置发射
-        let x = Math.random() * window.innerWidth;
-        // 避开中间文字区域，尽量在两侧发射
-        if (Math.abs(x - window.innerWidth/2) < 200) return; 
-        
-        let hue = Math.random() * 360;
-        this.fireworks.push(new FireworkParticle(x, window.innerHeight, hue, false));
-    }
-
-    update() {
-        // 更新火箭
-        for (let i = this.fireworks.length - 1; i >= 0; i--) {
-            let fw = this.fireworks[i];
-            fw.update();
-            if (fw.dead) {
-                // 爆炸！生成碎片
-                this.explode(fw.pos.x, fw.pos.y, fw.hue);
-                this.fireworks.splice(i, 1);
+        explode() {
+            const count = 80 + Math.random() * 50;
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(this.x, this.y, this.color));
             }
         }
-        // 更新碎片
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            let p = this.particles[i];
-            p.update();
-            if (p.dead) this.particles.splice(i, 1);
+    }
+
+    // 主循环
+    function loop() {
+        requestAnimationFrame(loop);
+        frames++;
+
+        // 拖尾效果
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.fillRect(0, 0, width, height);
+
+        // 随机发射火箭
+        if (frames % 30 === 0) { // 发射频率
+            rockets.push(new Rocket());
+        }
+
+        // 更新绘制火箭
+        for (let i = rockets.length - 1; i >= 0; i--) {
+            rockets[i].update();
+            rockets[i].draw(ctx);
+            if (rockets[i].dead) {
+                rockets.splice(i, 1);
+            }
+        }
+
+        // 更新绘制粒子
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].update();
+            particles[i].draw(ctx);
+            if (particles[i].alpha <= 0) {
+                particles.splice(i, 1);
+            }
         }
     }
 
-    explode(x, y, hue) {
-        let count = 80 + Math.floor(Math.random() * 50); // 爆炸粒子数
-        for (let i = 0; i < count; i++) {
-            this.particles.push(new FireworkParticle(x, y, hue, true));
-        }
-    }
+    loop();
+})();
 
-    draw(ctx) {
-        // 叠加模式让爆炸更亮
-        ctx.globalCompositeOperation = 'lighter';
-        this.fireworks.forEach(fw => fw.draw(ctx));
-        this.particles.forEach(p => p.draw(ctx));
-        ctx.globalCompositeOperation = 'source-over';
-    }
-}
 
-// --- 文字管理系统 (Text Manager) ---
-class TextManager {
-    constructor() {
-        this.particles = [];
-        this.sequence = [
-            { text: "3", type: "countdown" },
-            { text: "2", type: "countdown" },
-            { text: "1", type: "countdown" },
-            { text: "2026", type: "year" },
-            { text: "新年快乐", type: "bless" },
-            { text: "马年大吉", type: "bless" },
-            { text: "龙马精神", type: "bless" },
-            { text: "万事如意", type: "final" } // 最后一个状态
-        ];
-        this.currentIndex = 0;
-        this.state = "playing"; // playing, waiting, finished
-        this.timer = null;
-        this.setupParticles();
-    }
-
-    // 初始化粒子池
-    setupParticles() {
-        for (let i = 0; i < CONFIG.particleCount; i++) {
-            this.particles.push(new TextParticle(window.innerWidth / 2, window.innerHeight / 2));
-        }
-    }
-
-    // 将文字栅格化为点坐标
-    getTextPoints(text) {
-        // 创建离屏 Canvas
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = window.innerWidth;
-        tempCanvas.height = window.innerHeight;
-
-        // 绘制文字
-        tempCtx.fillStyle = '#fff';
-        tempCtx.font = CONFIG.font;
-        tempCtx.textAlign = 'center';
-        tempCtx.textBaseline = 'middle';
+/**
+ * ============================================================================
+ * 模块二：Shape Shifter 文字粒子引擎 (Text Particle Engine)
+ * 负责前景的粒子文字变换
+ * ============================================================================
+ */
+var S = {
+    init: function () {
+        // 初始化绘制层
+        S.Drawing.init('#text-canvas');
         
-        // 自适应字体大小
-        if (text.length > 2) tempCtx.font = 'bold 150px "Microsoft YaHei"';
-        if (text.length > 4) tempCtx.font = 'bold 120px "Microsoft YaHei"';
+        // 启动文字序列模拟
+        // 格式：#countdown [数字] | [文字1] | [文字2] ...
+        // 核心修改：去除了多余的分隔符，增加了无限循环逻辑
+        // 注意：2026年是马年，这里配置了马年的祝福语
+        S.UI.simulate("#countdown 3|2026|新年快乐|马年大吉|万事如意|龙马精神|HAPPY|NEW YEAR");
+
+        // 启动渲染循环
+        S.Drawing.loop(function () {
+            S.Shape.render();
+        });
+    }
+};
+
+// --- 绘图控制器 ---
+S.Drawing = (function () {
+    var canvas, context, renderFn;
+    var requestFrame = window.requestAnimationFrame || 
+                       function(callback) { window.setTimeout(callback, 1000 / 60); };
+
+    return {
+        init: function (el) {
+            canvas = document.querySelector(el);
+            context = canvas.getContext('2d');
+            this.adjustCanvas();
+            window.addEventListener('resize', function () {
+                S.Drawing.adjustCanvas();
+            });
+        },
+        loop: function (fn) {
+            renderFn = !renderFn ? fn : renderFn;
+            this.clearFrame();
+            renderFn();
+            requestFrame.call(window, this.loop.bind(this));
+        },
+        adjustCanvas: function () {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        },
+        clearFrame: function () {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+        },
+        getArea: function () {
+            return { w: canvas.width, h: canvas.height };
+        },
+        // 绘制单个粒子
+        drawCircle: function (p, c) {
+            context.fillStyle = c.render();
+            context.beginPath();
+            // 粒子大小随 z 轴变化，产生景深感
+            var radius = Math.max(0.1, p.z); 
+            context.arc(p.x, p.y, radius, 0, 2 * Math.PI, true);
+            context.closePath();
+            context.fill();
+        }
+    };
+})();
+
+// --- UI 序列控制器 ---
+S.UI = (function () {
+    var interval,
+        currentAction,
+        time,
+        maxShapeSize = 30,
+        sequence = [],
+        cmd = '#';
+
+    // 核心修改：更健壮的序列解析
+    function performAction(value) {
+        // 如果传入的是字符串，进行分割并过滤空项
+        if (typeof value === 'string') {
+            sequence = value.split('|').filter(function(item) { return item.trim() !== ''; });
+        } else {
+            sequence = value;
+        }
+
+        // 循环逻辑：如果没有动作了，重新开始 (无限循环)
+        if (sequence.length === 0) {
+            // 重置为默认序列
+            performAction("#countdown 3|2026|新年快乐|马年大吉|万事如意");
+            return;
+        }
+
+        // 提取下一个动作
+        var current = sequence.shift(); 
+        var action = getAction(current);
+        var val = getValue(current);
         
-        tempCtx.fillText(text, tempCanvas.width / 2, tempCanvas.height / 2);
+        // 默认延时
+        var delay = 3000; 
 
-        // 获取像素数据
-        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        const data = imageData.data;
-        const points = [];
-        const gap = 8; // 采样间隔 (越小粒子越密)
+        if (action === 'countdown') {
+            val = parseInt(val) || 3;
+            val = val > 0 ? val : 3;
+            // 倒计时逻辑
+            timedAction(function (index) {
+                if (index === 0) {
+                    performAction(sequence); // 倒计时结束，执行后续
+                } else {
+                    S.Shape.switchShape(S.ShapeBuilder.letter(index), true); // true 表示快速变换
+                }
+            }, 1000, val, true); // 每秒跳一次
+        } else {
+            // 普通文字显示
+            S.Shape.switchShape(S.ShapeBuilder.letter(current));
+            // 等待 delay 毫秒后执行下一个
+            setTimeout(function() {
+                performAction(sequence);
+            }, delay);
+        }
+    }
 
-        for (let y = 0; y < tempCanvas.height; y += gap) {
-            for (let x = 0; x < tempCanvas.width; x += gap) {
-                const index = (y * tempCanvas.width + x) * 4;
-                if (data[index + 3] > 128) { // 如果透明度大于 128 (有文字)
-                    points.push({ x: x, y: y });
+    function getAction(value) {
+        value = value && value.split(' ')[0];
+        return value && value[0] === cmd && value.substring(1);
+    }
+
+    function getValue(value) {
+        return value && value.split(' ')[1];
+    }
+
+    // 倒计时辅助函数
+    function timedAction(fn, delay, max, reverse) {
+        clearInterval(interval);
+        currentAction = reverse ? max : 1;
+        fn(currentAction);
+
+        if (!max || (!reverse && currentAction < max) || (reverse && currentAction > 0)) {
+            interval = setInterval(function () {
+                currentAction = reverse ? currentAction - 1 : currentAction + 1;
+                fn(currentAction);
+                if ((!reverse && max && currentAction === max) || (reverse && currentAction === 0)) {
+                    clearInterval(interval);
+                }
+            }, delay);
+        }
+    }
+
+    return {
+        simulate: function (action) {
+            performAction(action);
+        }
+    };
+})();
+
+// --- 基础点类 ---
+S.Point = function (args) {
+    this.x = args.x;
+    this.y = args.y;
+    this.z = args.z;
+    this.a = args.a; // alpha 透明度
+    this.h = args.h; // helper 变量
+};
+
+S.Color = function (r, g, b, a) {
+    this.r = r; this.g = g; this.b = b; this.a = a;
+};
+S.Color.prototype.render = function () {
+    return 'rgba(' + this.r + ',' + this.g + ',' + this.b + ',' + this.a + ')';
+};
+
+// --- 粒子实体类 ---
+S.Dot = function (x, y) {
+    this.p = new S.Point({
+        x: x, y: y, z: 5, a: 1, h: 0
+    });
+    this.e = 0.07; // 缓动系数 easing
+    this.s = true; // 状态标记
+
+    this.c = new S.Color(255, 255, 255, this.p.a); // 粒子颜色：白色
+    this.t = this.clone(); // 目标位置 target
+    this.q = []; // 动作队列 queue
+};
+
+S.Dot.prototype = {
+    clone: function () {
+        return new S.Point({
+            x: this.x, y: this.y, z: this.z, a: this.a, h: this.h
+        });
+    },
+    _draw: function () {
+        this.c.a = this.p.a;
+        S.Drawing.drawCircle(this.p, this.c);
+    },
+    _moveTowards: function (n) {
+        var details = this.distanceTo(n, true),
+            dx = details[0],
+            dy = details[1],
+            d = details[2],
+            e = this.e * d;
+
+        if (this.p.h === -1) {
+            this.p.x = n.x; this.p.y = n.y;
+            return true;
+        }
+        if (d > 1) {
+            this.p.x -= ((dx / d) * e);
+            this.p.y -= ((dy / d) * e);
+        } else {
+            if (this.p.h > 0) {
+                this.p.h--;
+            } else {
+                return true;
+            }
+        }
+        return false;
+    },
+    _update: function () {
+        if (this._moveTowards(this.t)) {
+            var p = this.q.shift();
+            if (p) {
+                this.t.x = p.x || this.p.x;
+                this.t.y = p.y || this.p.y;
+                this.t.z = p.z || this.p.z;
+                this.t.a = p.a || this.p.a;
+                this.p.h = p.h || 0;
+            } else {
+                // 闲置状态下的微小抖动，增加活力
+                if (this.s) {
+                    this.p.x -= Math.sin(Math.random() * 3.142);
+                    this.p.y -= Math.sin(Math.random() * 3.142);
+                } else {
+                    this.move(new S.Point({
+                        x: this.p.x + (Math.random() * 50) - 25,
+                        y: this.p.y + (Math.random() * 50) - 25,
+                    }));
                 }
             }
         }
-        return points;
+        // 透明度和 Z 轴缓动
+        d = this.p.a - this.t.a;
+        this.p.a = Math.max(0.1, this.p.a - (d * 0.05));
+        d = this.p.z - this.t.z;
+        this.p.z = Math.max(1, this.p.z - (d * 0.05));
+    },
+    distanceTo: function (n, details) {
+        var dx = this.p.x - n.x,
+            dy = this.p.y - n.y,
+            d = Math.sqrt(dx * dx + dy * dy);
+        return details ? [dx, dy, d] : d;
+    },
+    move: function (p, avoidStatic) {
+        if (!avoidStatic || (avoidStatic && this.distanceTo(p) > 1)) {
+            this.q.push(p);
+        }
+    },
+    render: function () {
+        this._update();
+        this._draw();
+    }
+};
+
+// --- 形状构建器 (核心修复：字体适配) ---
+S.ShapeBuilder = (function () {
+    var gap = 11, // 粒子间距，越小粒子越密
+        shapeCanvas = document.createElement('canvas'),
+        shapeContext = shapeCanvas.getContext('2d'),
+        fontFamily = 'Microsoft YaHei, Helvetica, Arial, sans-serif';
+
+    function fit() {
+        shapeCanvas.width = Math.floor(window.innerWidth / gap) * gap;
+        shapeCanvas.height = Math.floor(window.innerHeight / gap) * gap;
+        shapeContext.fillStyle = 'red';
+        shapeContext.textBaseline = 'middle';
+        shapeContext.textAlign = 'center';
     }
 
-    // 切换到下一个词
-    nextWord() {
-        if (this.currentIndex >= this.sequence.length) return;
+    function processCanvas() {
+        var pixels = shapeContext.getImageData(0, 0, shapeCanvas.width, shapeCanvas.height).data,
+            dots = [],
+            x = 0, y = 0,
+            fx = shapeCanvas.width, fy = shapeCanvas.height,
+            w = 0, h = 0;
 
-        const currentItem = this.sequence[this.currentIndex];
-        const text = currentItem.text;
-        const points = this.getTextPoints(text);
-
-        // 分配粒子到新的目标点
-        // 如果粒子不够，复用现有的；如果多了，多余的随机飞走
-        for (let i = 0; i < this.particles.length; i++) {
-            let p = this.particles[i];
-            if (i < points.length) {
-                // 只有随机选取点位，才不会显得死板
-                let ptr = points[i]; 
-                p.setTarget(ptr.x, ptr.y);
-                p.alpha = 1;
-            } else {
-                // 多余的粒子，让它们在文字周围盘旋或者隐藏
-                p.setTarget(window.innerWidth/2 + (Math.random()-0.5)*500, window.innerHeight/2 + (Math.random()-0.5)*500);
+        for (var p = 0; p < pixels.length; p += (4 * gap)) {
+            if (pixels[p + 3] > 0) {
+                dots.push(new S.Point({ x: x, y: y }));
+                w = x > w ? x : w;
+                h = y > h ? y : h;
+                fx = x < fx ? x : fx;
+                fy = y < fy ? y : fy;
+            }
+            x += gap;
+            if (x >= shapeCanvas.width) {
+                x = 0; y += gap; p += gap * 4 * shapeCanvas.width;
             }
         }
-        
-        // 调度下一次切换
-        let delay = 1000;
-        if (currentItem.type === "countdown") delay = 1200;
-        else if (currentItem.type === "year") delay = 3000;
-        else delay = 2500;
+        return { dots: dots, w: w + fx, h: h + fy };
+    }
 
-        if (currentItem.type !== "final") {
-            setTimeout(() => {
-                this.currentIndex++;
-                this.nextWord();
-            }, delay);
-        } else {
-            console.log("Sequence finished, text stays.");
+    function setFontSize(s) {
+        shapeContext.font = 'bold ' + s + 'px ' + fontFamily;
+    }
+
+    function init() {
+        fit();
+        window.addEventListener('resize', fit);
+    }
+    init();
+
+    return {
+        // 构建文字形状
+        letter: function (l) {
+            var s = 0;
+            // 基础字体大小
+            var baseFontSize = 600; 
+            
+            // 1. 设置初始字体计算宽度
+            setFontSize(baseFontSize);
+            var textWidth = shapeContext.measureText(l).width;
+            
+            // 2. 动态调整字体大小以适应屏幕
+            // 目标宽度占屏幕宽度的 80%，目标高度占屏幕高度的 50%
+            var targetWidth = shapeCanvas.width * 0.8; 
+            var ratio = targetWidth / textWidth;
+            
+            s = Math.min(baseFontSize, baseFontSize * ratio, shapeCanvas.height * 0.5);
+
+            setFontSize(s);
+            shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
+            shapeContext.fillText(l, shapeCanvas.width / 2, shapeCanvas.height / 2);
+
+            return processCanvas();
+        },
+        circle: function (d) {
+            var r = Math.max(0, d) / 2;
+            shapeContext.clearRect(0, 0, shapeCanvas.width, shapeCanvas.height);
+            shapeContext.beginPath();
+            shapeContext.arc(r * gap, r * gap, r * gap, 0, 2 * Math.PI, false);
+            shapeContext.fill();
+            shapeContext.closePath();
+            return processCanvas();
         }
+    };
+})();
+
+// --- 形状管理器 ---
+S.Shape = (function () {
+    var dots = [],
+        width = 0, height = 0,
+        cx = 0, cy = 0;
+
+    function compensate() {
+        var a = S.Drawing.getArea();
+        cx = a.w / 2 - width / 2;
+        cy = a.h / 2 - height / 2;
     }
 
-    start() {
-        this.nextWord();
-    }
+    return {
+        // 切换到新形状
+        switchShape: function (n, fast) {
+            var size,
+                a = S.Drawing.getArea();
 
-    update() {
-        this.particles.forEach(p => p.update());
-    }
+            width = n.w;
+            height = n.h;
+            compensate();
 
-    draw(ctx) {
-        this.particles.forEach(p => p.draw(ctx));
-    }
-}
+            // 如果新形状需要的点更多，补充点
+            if (n.dots.length > dots.length) {
+                size = n.dots.length - dots.length;
+                for (var d = 1; d <= size; d++) {
+                    dots.push(new S.Dot(a.w / 2, a.h / 2));
+                }
+            }
 
-// --- 主程序 (Main Application) ---
-class Application {
-    constructor() {
-        this.canvas = document.getElementById('mainCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.resize();
-        
-        this.fireworkSystem = new FireworkSystem();
-        this.textManager = new TextManager();
-        
-        window.addEventListener('resize', () => this.resize());
-        
-        this.loop = this.loop.bind(this);
-        this.textManager.start();
-        this.loop();
-    }
+            var d = 0, i = 0;
 
-    resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-    }
+            // 重新分配点的位置
+            while (n.dots.length > 0) {
+                i = Math.floor(Math.random() * n.dots.length);
+                dots[d].e = fast ? 0.25 : (dots[d].s ? 0.14 : 0.11);
 
-    loop() {
-        // 1. 绘制背景 (带拖尾效果)
-        this.ctx.globalCompositeOperation = 'source-over';
-        this.ctx.fillStyle = `rgba(5, 5, 5, ${CONFIG.bgAlpha})`;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                if (dots[d].s) {
+                    // 从随机位置飞入
+                    dots[d].move(new S.Point({
+                        z: Math.random() * 20 + 10,
+                        a: Math.random(),
+                        h: 18
+                    }));
+                } else {
+                    dots[d].move(new S.Point({
+                        z: Math.random() * 5 + 5,
+                        h: fast ? 18 : 30
+                    }));
+                }
 
-        // 2. 随机生成烟花
-        if (Math.random() < CONFIG.fireworkChance) {
-            this.fireworkSystem.addFirework();
+                dots[d].s = true;
+                // 移动到目标文字位置
+                dots[d].move(new S.Point({
+                    x: n.dots[i].x + cx,
+                    y: n.dots[i].y + cy,
+                    a: 1,
+                    z: 5,
+                    h: 0
+                }));
+
+                n.dots = n.dots.slice(0, i).concat(n.dots.slice(i + 1));
+                d++;
+            }
+
+            // 多余的点飞出屏幕
+            for (var i = d; i < dots.length; i++) {
+                if (dots[i].s) {
+                    dots[i].move(new S.Point({
+                        z: Math.random() * 20 + 10,
+                        a: Math.random(),
+                        h: 20
+                    }));
+
+                    dots[i].s = false;
+                    dots[i].e = 0.04;
+                    dots[i].move(new S.Point({
+                        x: Math.random() * a.w,
+                        y: Math.random() * a.h,
+                        a: 0.3, 
+                        z: Math.random() * 4,
+                        h: 0
+                    }));
+                }
+            }
+        },
+        render: function () {
+            for (var d = 0; d < dots.length; d++) {
+                dots[d].render();
+            }
         }
+    };
+})();
 
-        // 3. 更新和绘制烟花
-        this.fireworkSystem.update();
-        this.fireworkSystem.draw(this.ctx);
-
-        // 4. 更新和绘制文字
-        this.textManager.update();
-        this.textManager.draw(this.ctx);
-
-        requestAnimationFrame(this.loop);
-    }
-}
-
-// 启动程序
-window.onload = () => {
-    new Application();
-};
+// 初始化全流程
+S.init();
 
 </script>
 </body>
