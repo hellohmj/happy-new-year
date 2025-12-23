@@ -32,7 +32,7 @@ html,body{
 <div id="music-controls" style="position: absolute; top: 20px; right: 20px; z-index: 10000; cursor: pointer; color: #fff; font-family: 'Microsoft YaHei', sans-serif; border: 1px solid rgba(255,255,255,0.6); padding: 8px 15px; border-radius: 20px; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px); transition: all 0.3s; user-select: none;">
     🎵 播放: 刚刚好-薛之谦
 </div>
-<audio id="bgm" src="刚刚好-薛之谦.mp3" autoplay loop></audio>
+<audio id="bgm" src="https://er-sycdn.kuwo.cn/de7f1aa91ce6a1bc65f8b72bfa2662f1/694a7c02/resource/30106/trackmedia/M500001Yityk4dAU9X.mp3" autoplay loop></audio>
 <script>
 window.onload = function() {
     var bgm = document.getElementById('bgm');
@@ -412,32 +412,36 @@ function bindFireworkClicks(){
   
   function updateBtnState() {
       if(bgm.paused) {
-          musicBtn.innerHTML = "🎵 播放: 刚刚好-薛之谦";
+          musicBtn.innerHTML = "🎵 播放";
           musicBtn.style.background = "rgba(0,0,0,0.3)";
       } else {
-          musicBtn.innerHTML = "🎵 暂停: 刚刚好-薛之谦";
+          musicBtn.innerHTML = "🎵 暂停";
           musicBtn.style.background = "rgba(255,100,100,0.5)";
       }
   }
+
+  // 监听音频事件，确保状态同步
+  bgm.addEventListener('play', updateBtnState);
+  bgm.addEventListener('pause', updateBtnState);
+  bgm.addEventListener('ended', updateBtnState);
 
   // 按钮点击事件
   musicBtn.addEventListener('click', function(e){
       e.stopPropagation(); // 防止触发烟花
       if(bgm.paused){
-          bgm.play().then(updateBtnState).catch(function(e){
+          bgm.play().catch(function(e){
             console.log("Play error:", e);
             musicBtn.innerHTML = "⚠️ 播放失败(请点击屏幕)";
           });
       } else {
           bgm.pause();
-          updateBtnState();
       }
   });
 
   function handler(e){
     // 尝试在用户交互时自动播放
     if (bgm && bgm.paused) {
-        bgm.play().then(updateBtnState).catch(err => console.log("Auto-play blocked:", err));
+        bgm.play().catch(err => console.log("Auto-play blocked:", err));
     }
     if(e.touches && e.touches.length){
       explodeAtScreen(e.touches[0].clientX, e.touches[0].clientY);
@@ -448,6 +452,9 @@ function bindFireworkClicks(){
   // 顶层形变画布可能拦截事件，因此对整个文档监听
   document.addEventListener('click', handler);
   document.addEventListener('touchstart', handler, {passive:true});
+  
+  // 初始化检查
+  updateBtnState();
 }
 bindFireworkClicks();
 
@@ -1182,4 +1189,3 @@ S.init();
 
 </body>
 </html>
-
